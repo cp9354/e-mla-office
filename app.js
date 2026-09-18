@@ -1,3 +1,94 @@
+const AUTH_SESSION_ENDPOINT='/.netlify/functions/me';
+const AUTH_LOGIN_ENDPOINT='/.netlify/functions/login';
+const AUTH_LOGOUT_ENDPOINT='/.netlify/functions/logout';
+const AUTH_CONFIG={mlaEmail:'acpatel789@gmail.com',paEmail:'pa@emlaoffice.in'};
+
+function authScreen(){
+  if(document.querySelector('.login-screen')) return;
+  document.body.classList.add('auth-locked');
+  const el=document.createElement('div');
+  el.className='login-screen';
+  el.innerHTML=`
+    <div class="login-card">
+      <div class="login-brand"><div class="brand-mark">e</div><div><strong>e-MLA Office</strong><span>Dharampur Constituency • 178</span></div></div>
+      <div class="login-heading"><span class="eyebrow">SECURE OFFICE ACCESS</span><h1>Office Login</h1><p>Only authorized MLA and PA accounts can access the office ERP.</p></div>
+      <div class="role-switch">
+        <button type="button" class="role-btn active" data-role="mla">MLA</button>
+        <button type="button" class="role-btn" data-role="pa">Personal Assistant</button>
+      </div>
+      <form id="loginForm" class="login-form">
+        <div class="field"><label>Email address</label><input id="loginEmail" name="email" type="email" autocomplete="username" value="${AUTH_CONFIG.mlaEmail}" required></div>
+        <div class="field"><label>Password</label><input name="password" type="password" autocomplete="current-password" placeholder="Enter password" required></div>
+        <button class="primary login-btn" type="submit">Sign in securely</button>
+        <div id="loginError" class="login-error"></div>
+      </form>
+      <div class="login-note">Access is restricted to the two authorized office roles. Registration is not available on this page.</div>
+    </div>`;
+  document.body.prepend(el);
+  let role='mla';
+  const email=el.querySelector('#loginEmail');
+  el.querySelectorAll('.role-btn').forEach(btn=>btn.onclick=()=>{
+    role=btn.dataset.role;
+    el.querySelectorAll('.role-btn').forEach(b=>b.classList.toggle('active',b===btn));
+    email.value=role==='mla'?AUTH_CONFIG.mlaEmail:AUTH_CONFIG.paEmail;
+  });
+  el.querySelector('#loginForm').onsubmit=async e=>{
+    e.preventDefault();
+    const form=new FormData(e.currentTarget);
+    const error=el.querySelector('#loginError');
+    error.textContent='';
+    const button=el.querySelector('.login-btn');
+    button.disabled=true;
+    button.textContent='Signing in...';
+    try{
+      const res=await fetch(AUTH_LOGIN_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role,email:String(form.get('email')||'').trim().toLowerCase(),password:String(form.get('password')||'')})});
+      const data=await res.json().catch(()=>({}));
+      if(!res.ok) throw new Error(data.message||'Invalid login details.');
+      localStorage.setItem('emla-user',JSON.stringify(data.user||{}));
+      document.body.classList.remove('auth-locked');
+      el.remove();
+      addLogoutButton(data.user);
+      bootAuth();
+    }catch(err){
+      error.textContent=err.message||'Login failed. Please try again.';
+    }finally{
+      button.disabled=false;
+      button.textContent='Sign in securely';
+    }
+  };
+}
+
+function addLogoutButton(user){
+  document.getElementById('logoutButton')?.remove();
+  const top=document.querySelector('.top-actions');
+  if(!top) return;
+  const b=document.createElement('button');
+  b.id='logoutButton';
+  b.className='logout-btn';
+  b.textContent='Logout';
+  b.title=(user?.role||'')+' • Sign out';
+  b.onclick=async()=>{
+    await fetch(AUTH_LOGOUT_ENDPOINT,{method:'POST'}).catch(()=>{});
+    localStorage.removeItem('emla-user');
+    document.body.classList.add('auth-locked');
+    authScreen();
+  };
+  top.appendChild(b);
+}
+
+async function bootAuth(){
+  try{
+    const res=await fetch(AUTH_SESSION_ENDPOINT,{credentials:'include'});
+    if(res.ok){
+      const data=await res.json();
+      localStorage.setItem('emla-user',JSON.stringify(data.user||{}));
+      addLogoutButton(data.user);
+      render();
+      return;
+    }
+  }catch(e){}
+  authScreen();
+}
 const state={lang:localStorage.getItem('emla-lang')||'en',key:'dashboard'};
 const groups=[
  {en:'OVERVIEW',gu:'ઝાંખી',hi:'अवलोकन',items:[['Dashboard','dashboard'],['Reports & Analytics','reports']]},
