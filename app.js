@@ -122,4 +122,4 @@ function statusClass(s){return s==='Completed'?'done':s==='In Progress'?'progres
 function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200)}
 document.getElementById('languageSelect').onchange=e=>{state.lang=e.target.value;localStorage.setItem('emla-lang',state.lang);render()};
-render();
+bootAuth();
