@@ -14,3 +14,11 @@ body.auth-locked .sidebar,body.auth-locked .main{visibility:hidden}
 .logout-btn{height:42px;border:1px solid #f0d5c5;background:#fff7f2;color:#a54c1b;border-radius:10px;padding:0 13px;font-weight:800;cursor:pointer}
 .logout-btn:hover{border-color:var(--orange);background:#fff1e8}
 @media(max-width:520px){.login-card{padding:24px;border-radius:18px}.login-heading h1{font-size:26px}}
+.login-step[hidden]{display:none}
+.code-input{text-align:center;font-size:26px;font-weight:800;letter-spacing:12px;text-indent:12px;padding:14px 13px !important}
+.code-input::placeholder{letter-spacing:10px;color:#c4cdda;font-weight:700}
+.code-actions{display:flex;justify-content:space-between;gap:12px;margin-top:14px}
+.link-btn{border:0;background:transparent;color:var(--orange);font-size:12px;font-weight:800;cursor:pointer;padding:4px 2px}
+.link-btn:hover{text-decoration:underline}
+.link-btn:disabled{color:#9aa6b8;cursor:not-allowed;text-decoration:none}
+.login-heading strong.code-target{color:var(--ink)}

@@ -1,0 +1,10 @@
+{
+  "name": "e-mla-office",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "e-MLA Office ERP for Dharampur Constituency",
+  "dependencies": {
+    "@netlify/database": "^2.0.1"
+  }
+}

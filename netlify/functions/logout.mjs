@@ -1,9 +1,7 @@
-export default async ()=>{
-  return new Response(JSON.stringify({ok:true}),{
-    status:200,
-    headers:{
-      'content-type':'application/json',
-      'set-cookie':'emla_session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0'
-    }
-  });
+import { clearedSessionCookie, json, logEvent, readSession } from '../lib/auth.mjs';
+
+export default async (req) => {
+  const user = await readSession(req);
+  if (user) await logEvent(req, { email: user.email, role: user.role, event: 'logout' });
+  return json({ ok: true }, 200, { 'set-cookie': clearedSessionCookie() });
 };
