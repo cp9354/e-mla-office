@@ -1,0 +1,11 @@
+{
+  "name": "e-mla-office",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@netlify/identity": "^2.0.0"
+  },
+  "devDependencies": {
+    "@netlify/functions": "^6.0.0"
+  }
+}
