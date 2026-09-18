@@ -1,2 +1,14 @@
+[build]
+  publish = "."
+
 [functions]
   directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+# Server-side sources live under netlify/ but the site root is the publish
+# directory, so block direct public reads of that folder.
+[[redirects]]
+  from = "/netlify/*"
+  to = "/index.html"
+  status = 404
+  force = true

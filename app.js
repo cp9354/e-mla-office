@@ -1,7 +1,13 @@
 const AUTH_SESSION_ENDPOINT='/.netlify/functions/me';
-const AUTH_LOGIN_ENDPOINT='/.netlify/functions/login';
+const AUTH_REQUEST_CODE_ENDPOINT='/.netlify/functions/request-code';
+const AUTH_VERIFY_CODE_ENDPOINT='/.netlify/functions/verify-code';
 const AUTH_LOGOUT_ENDPOINT='/.netlify/functions/logout';
-const AUTH_CONFIG={mlaEmail:'acpatel789@gmail.com',paEmail:'pa@emlaoffice.in'};
+
+// Only these two office roles can sign in. There is no registration path.
+const AUTH_ACCOUNTS=[
+  {role:'mla',label:'MLA',email:'acpatel789@gmail.com'},
+  {role:'pa',label:'Personal Assistant',email:'crvaland143@gmail.com'}
+];
 
 function authScreen(){
   if(document.querySelector('.login-screen')) return;
@@ -11,51 +17,169 @@ function authScreen(){
   el.innerHTML=`
     <div class="login-card">
       <div class="login-brand"><div class="brand-mark">e</div><div><strong>e-MLA Office</strong><span>Dharampur Constituency • 178</span></div></div>
-      <div class="login-heading"><span class="eyebrow">SECURE OFFICE ACCESS</span><h1>Office Login</h1><p>Only authorized MLA and PA accounts can access the office ERP.</p></div>
-      <div class="role-switch">
-        <button type="button" class="role-btn active" data-role="mla">MLA</button>
-        <button type="button" class="role-btn" data-role="pa">Personal Assistant</button>
+
+      <div class="login-step" data-step="email">
+        <div class="login-heading"><span class="eyebrow">SECURE OFFICE ACCESS</span><h1>Office Login</h1><p>Only the authorized MLA and PA accounts can access this office ERP. A one-time code is emailed to you — no password to remember.</p></div>
+        <div class="role-switch">
+          ${AUTH_ACCOUNTS.map((a,i)=>`<button type="button" class="role-btn${i===0?' active':''}" data-role="${a.role}">${a.label}</button>`).join('')}
+        </div>
+        <form id="emailForm" class="login-form" novalidate>
+          <div class="field"><label for="loginEmail">Email address</label><input id="loginEmail" name="email" type="email" autocomplete="username" spellcheck="false" value="${AUTH_ACCOUNTS[0].email}" required></div>
+          <button class="primary login-btn" type="submit">Send login code</button>
+          <div class="login-error" data-error="email"></div>
+        </form>
       </div>
-      <form id="loginForm" class="login-form">
-        <div class="field"><label>Email address</label><input id="loginEmail" name="email" type="email" autocomplete="username" value="${AUTH_CONFIG.mlaEmail}" required></div>
-        <div class="field"><label>Password</label><input name="password" type="password" autocomplete="current-password" placeholder="Enter password" required></div>
-        <button class="primary login-btn" type="submit">Sign in securely</button>
-        <div id="loginError" class="login-error"></div>
-      </form>
+
+      <div class="login-step" data-step="code" hidden>
+        <div class="login-heading"><span class="eyebrow">STEP 2 OF 2</span><h1>Enter your code</h1><p>Code sent to <strong class="code-target"></strong>. Aa code 10 minute sudhi valid chhe.</p></div>
+        <form id="codeForm" class="login-form" novalidate>
+          <div class="field"><label for="loginCode">6-digit login code</label><input id="loginCode" name="code" class="code-input" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="------" required></div>
+          <button class="primary login-btn" type="submit">Verify &amp; sign in</button>
+          <div class="login-error" data-error="code"></div>
+        </form>
+        <div class="code-actions">
+          <button type="button" class="link-btn" data-action="resend">Resend code</button>
+          <button type="button" class="link-btn" data-action="back">Change email</button>
+        </div>
+      </div>
+
       <div class="login-note">Access is restricted to the two authorized office roles. Registration is not available on this page.</div>
     </div>`;
   document.body.prepend(el);
-  let role='mla';
-  const email=el.querySelector('#loginEmail');
+
+  const emailInput=el.querySelector('#loginEmail');
+  const codeInput=el.querySelector('#loginCode');
+  const steps={email:el.querySelector('[data-step="email"]'),code:el.querySelector('[data-step="code"]')};
+  const errors={email:el.querySelector('[data-error="email"]'),code:el.querySelector('[data-error="code"]')};
+  const resendBtn=el.querySelector('[data-action="resend"]');
+  let cooldownTimer=null;
+
+  const setError=(step,message)=>{errors[step].textContent=message||'';};
+  const showStep=name=>{
+    Object.entries(steps).forEach(([key,node])=>{node.hidden=key!==name;});
+    if(name==='code') codeInput.focus(); else emailInput.focus();
+  };
+  const busy=(form,on,label)=>{
+    const btn=form.querySelector('.login-btn');
+    btn.disabled=on;
+    btn.textContent=on?label:btn.dataset.idle;
+  };
+  el.querySelectorAll('.login-btn').forEach(b=>{b.dataset.idle=b.textContent;});
+
   el.querySelectorAll('.role-btn').forEach(btn=>btn.onclick=()=>{
-    role=btn.dataset.role;
+    const account=AUTH_ACCOUNTS.find(a=>a.role===btn.dataset.role);
     el.querySelectorAll('.role-btn').forEach(b=>b.classList.toggle('active',b===btn));
-    email.value=role==='mla'?AUTH_CONFIG.mlaEmail:AUTH_CONFIG.paEmail;
+    if(account) emailInput.value=account.email;
+    setError('email','');
   });
-  el.querySelector('#loginForm').onsubmit=async e=>{
-    e.preventDefault();
-    const form=new FormData(e.currentTarget);
-    const error=el.querySelector('#loginError');
-    error.textContent='';
-    const button=el.querySelector('.login-btn');
-    button.disabled=true;
-    button.textContent='Signing in...';
+
+  codeInput.addEventListener('input',()=>{
+    codeInput.value=codeInput.value.replace(/\D/g,'').slice(0,6);
+    setError('code','');
+  });
+
+  const startCooldown=seconds=>{
+    clearInterval(cooldownTimer);
+    let left=Math.max(Number(seconds)||0,0);
+    const tick=()=>{
+      if(left<=0){
+        clearInterval(cooldownTimer);
+        resendBtn.disabled=false;
+        resendBtn.textContent='Resend code';
+        return;
+      }
+      resendBtn.disabled=true;
+      resendBtn.textContent=`Resend code in ${left}s`;
+      left-=1;
+    };
+    tick();
+    cooldownTimer=setInterval(tick,1000);
+  };
+
+  async function requestCode(form,step){
+    const address=emailInput.value.trim().toLowerCase();
+    setError(step,'');
+    busy(form,true,'Sending code...');
     try{
-      const res=await fetch(AUTH_LOGIN_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role,email:String(form.get('email')||'').trim().toLowerCase(),password:String(form.get('password')||'')})});
+      const res=await fetch(AUTH_REQUEST_CODE_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:address})});
       const data=await res.json().catch(()=>({}));
-      if(!res.ok) throw new Error(data.message||'Invalid login details.');
+      if(!res.ok) throw new Error(data.message||'Could not send the login code.');
+      el.querySelector('.code-target').textContent=data.maskedEmail||address;
+      showStep('code');
+      startCooldown(data.cooldownSeconds||45);
+      return true;
+    }catch(err){
+      setError(step,err.message||'Could not send the login code.');
+      return false;
+    }finally{
+      busy(form,false);
+    }
+  }
+
+  el.querySelector('#emailForm').onsubmit=async e=>{
+    e.preventDefault();
+    await requestCode(e.currentTarget,'email');
+  };
+
+  resendBtn.onclick=async()=>{
+    resendBtn.disabled=true;
+    resendBtn.textContent='Sending...';
+    const sent=await requestCode(el.querySelector('#codeForm'),'code');
+    if(!sent){
+      resendBtn.disabled=false;
+      resendBtn.textContent='Resend code';
+    }
+  };
+
+  el.querySelector('[data-action="back"]').onclick=()=>{
+    clearInterval(cooldownTimer);
+    codeInput.value='';
+    setError('code','');
+    showStep('email');
+  };
+
+  el.querySelector('#codeForm').onsubmit=async e=>{
+    e.preventDefault();
+    const form=e.currentTarget;
+    setError('code','');
+    busy(form,true,'Verifying...');
+    try{
+      const res=await fetch(AUTH_VERIFY_CODE_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:emailInput.value.trim().toLowerCase(),code:codeInput.value})});
+      const data=await res.json().catch(()=>({}));
+      if(!res.ok){
+        if(data.code==='expired'||data.code==='locked'){
+          clearInterval(cooldownTimer);
+          codeInput.value='';
+          showStep('email');
+          setError('email',data.message||'Please request a new login code.');
+          return;
+        }
+        throw new Error(data.message||'Incorrect code.');
+      }
+      clearInterval(cooldownTimer);
       localStorage.setItem('emla-user',JSON.stringify(data.user||{}));
       document.body.classList.remove('auth-locked');
       el.remove();
-      addLogoutButton(data.user);
-      bootAuth();
+      applyUser(data.user);
+      render();
     }catch(err){
-      error.textContent=err.message||'Login failed. Please try again.';
+      setError('code',err.message||'Incorrect code.');
     }finally{
-      button.disabled=false;
-      button.textContent='Sign in securely';
+      busy(form,false);
     }
   };
+
+  showStep('email');
+}
+
+function applyUser(user){
+  if(!user) return;
+  const profile=document.querySelector('.profile');
+  if(profile){
+    const initials=String(user.role||'U').slice(0,2).toUpperCase();
+    profile.innerHTML=`<span class="avatar">${initials}</span><div><strong>${user.name||user.role||''}</strong><small>${user.title||user.role||''}</small></div>`;
+  }
+  addLogoutButton(user);
 }
 
 function addLogoutButton(user){
@@ -68,8 +192,9 @@ function addLogoutButton(user){
   b.textContent='Logout';
   b.title=(user?.role||'')+' • Sign out';
   b.onclick=async()=>{
-    await fetch(AUTH_LOGOUT_ENDPOINT,{method:'POST'}).catch(()=>{});
+    await fetch(AUTH_LOGOUT_ENDPOINT,{method:'POST',credentials:'include'}).catch(()=>{});
     localStorage.removeItem('emla-user');
+    document.getElementById('logoutButton')?.remove();
     document.body.classList.add('auth-locked');
     authScreen();
   };
@@ -82,11 +207,12 @@ async function bootAuth(){
     if(res.ok){
       const data=await res.json();
       localStorage.setItem('emla-user',JSON.stringify(data.user||{}));
-      addLogoutButton(data.user);
+      applyUser(data.user);
       render();
       return;
     }
   }catch(e){}
+  localStorage.removeItem('emla-user');
   authScreen();
 }
 const state={lang:localStorage.getItem('emla-lang')||'en',key:'dashboard'};
@@ -109,7 +235,7 @@ function T(k){return (tr[state.lang]&&tr[state.lang][k])||tr.en[k]||k}
 function nav(){const n=document.getElementById('nav');n.innerHTML='';groups.forEach(g=>{const d=document.createElement('div');d.className='group';d.innerHTML='<div class="group-title">'+(g[state.lang]||g.en)+'</div>';g.items.forEach(([label,key])=>{const a=document.createElement('button');a.className='nav '+(key===state.key?'active':'');a.innerHTML='<span class="nav-icon">'+(icons[key]||'•')+'</span><span>'+T(key)+'</span>';a.onclick=()=>{state.key=key;render()};d.appendChild(a)});n.appendChild(d)})}
 function records(key){return JSON.parse(localStorage.getItem('emla-'+key)||'[]')}
 function saveRecord(key,obj){const arr=records(key);arr.unshift({...obj,id:Date.now()});localStorage.setItem('emla-'+key,JSON.stringify(arr));}
-function dashboard(){const total=Object.values(pageTypes).reduce((n,a)=>n+records(a[0]).length,0);return '<div class="welcome"><div><span class="badge">178 • DHARAMPUR</span><h2>'+T('dashboard')+'</h2><p>'+T('sub')+'</p></div><div class="date-chip">'+new Date().toLocaleDateString(state.lang==='gu'?'gu-IN':state.lang==='hi'?'hi-IN':'en-IN',{day:'2-digit',month:'short',year:'numeric'})+'</div></div><div class="stat-grid"><div class="stat"><span>◉</span><small>'+T('total')+'</small><strong>'+Math.max(1248,total)+'</strong></div><div class="stat"><span>◷</span><small>'+T('pending')+'</small><strong>'+Math.max(184,records('applications').filter(x=>x.status==='Pending').length)+'</strong></div><div class="stat"><span>✓</span><small>'+T('completed')+'</small><strong>'+Math.max(968,records('works').filter(x=>x.status==='Completed').length)+'</strong></div><div class="stat"><span>▣</span><small>'+T('thisMonth')+'</small><strong>'+Math.max(96,records('applications').length)+'</strong></div></div><div class="two-col"><div class="panel"><div class="panel-head"><h3>'+T('quick')+'</h3></div><div class="quick-grid"><button onclick="openQuick('applications')">＋ '+T('addApplication')+'</button><button onclick="openQuick('citizens')">＋ '+T('addCitizen')+'</button><button onclick="openQuick('letters')">＋ '+T('addLetter')+'</button><button onclick="openQuick('events')">＋ '+T('addEvent')+'</button></div></div><div class="panel"><div class="panel-head"><h3>'+T('recent')+'</h3></div>'+tableForRecent()+'</div></div>'}
+function dashboard(){const total=Object.values(pageTypes).reduce((n,a)=>n+records(a[0]).length,0);return '<div class="welcome"><div><span class="badge">178 • DHARAMPUR</span><h2>'+T('dashboard')+'</h2><p>'+T('sub')+'</p></div><div class="date-chip">'+new Date().toLocaleDateString(state.lang==='gu'?'gu-IN':state.lang==='hi'?'hi-IN':'en-IN',{day:'2-digit',month:'short',year:'numeric'})+'</div></div><div class="stat-grid"><div class="stat"><span>◉</span><small>'+T('total')+'</small><strong>'+Math.max(1248,total)+'</strong></div><div class="stat"><span>◷</span><small>'+T('pending')+'</small><strong>'+Math.max(184,records('applications').filter(x=>x.status==='Pending').length)+'</strong></div><div class="stat"><span>✓</span><small>'+T('completed')+'</small><strong>'+Math.max(968,records('works').filter(x=>x.status==='Completed').length)+'</strong></div><div class="stat"><span>▣</span><small>'+T('thisMonth')+'</small><strong>'+Math.max(96,records('applications').length)+'</strong></div></div><div class="two-col"><div class="panel"><div class="panel-head"><h3>'+T('quick')+'</h3></div><div class="quick-grid"><button onclick="openQuick(\'applications\')">＋ '+T('addApplication')+'</button><button onclick="openQuick(\'citizens\')">＋ '+T('addCitizen')+'</button><button onclick="openQuick(\'letters\')">＋ '+T('addLetter')+'</button><button onclick="openQuick(\'events\')">＋ '+T('addEvent')+'</button></div></div><div class="panel"><div class="panel-head"><h3>'+T('recent')+'</h3></div>'+tableForRecent()+'</div></div>'}
 function tableForRecent(){let all=[];Object.entries(pageTypes).forEach(([k,a])=>records(a[0]).slice(0,3).forEach(r=>all.push({section:T(k),...r})));if(!all.length)return '<div class="empty">'+T('noRecords')+'</div>';return '<div class="table-wrap"><table><thead><tr><th>'+T('record')+'</th><th>'+T('person')+'</th><th>'+T('status')+'</th><th>'+T('date')+'</th></tr></thead><tbody>'+all.slice(0,6).map(r=>'<tr><td><strong>'+escapeHtml(r.name||r.title||r.subject||r.record||r.section)+'</strong><small>'+r.section+'</small></td><td>'+escapeHtml(r.location||r.person||r.department||'—')+'</td><td><span class="pill '+statusClass(r.status)+'">'+escapeHtml(r.status||T('pending'))+'</span></td><td>'+escapeHtml(r.date||new Date(r.id).toLocaleDateString())+'</td></tr>').join('')+'</tbody></table></div>'}
 function formPage(key){const type=pageTypes[key][0], f=fields(type);return '<div class="page-actions"><div><span class="eyebrow">'+T(key).toUpperCase()+'</span><h2>'+T(key)+'</h2><p>'+T('sub')+'</p></div><button class="primary" onclick="document.getElementById(\'recordForm\').scrollIntoView({behavior:\'smooth\'})">＋ '+T('add')+'</button></div><div class="panel form-panel"><div class="panel-head"><h3>'+T('add')+'</h3></div><form id="recordForm" onsubmit="submitRecord(event,\''+key+'\',\''+type+'\')"><div class="form-grid">'+f.map(x=>field(x)).join('')+'</div><button class="primary save-btn">'+T('save')+'</button></form></div><div class="panel"><div class="panel-head"><h3>'+T('recent')+'</h3><input id="recordSearch" class="search" placeholder="'+T('search')+'" oninput="renderRecords(\''+key+'\',\''+type+'\')"></div><div id="recordsArea"></div></div><div class="panel mini-info"><strong>e-MLA Office Dharampur</strong><span>Data is stored securely in this browser for this office workspace.</span></div>'}
 function fields(type){const common={application:[['name','text',T('name')],['mobile','text',T('mobile')],['location','text',T('location')],['title','text',T('title')],['status','select',T('status')],['date','date',T('date')],['notes','textarea',T('notes')]],citizen:[['name','text',T('name')],['mobile','text',T('mobile')],['location','text',T('location')],['department','text',T('department')],['status','select',T('status')],['notes','textarea',T('notes')]],letter:[['letterNo','text',T('letterNo')],['title','text',T('title')],['recipient','text',T('recipient')],['department','text',T('department')],['date','date',T('date')],['status','select',T('status')],['notes','textarea',T('notes')]]};return common[type]||[['name','text',T('name')],['title','text',T('title')],['location','text',T('location')],['department','text',T('department')],['date','date',T('date')],['status','select',T('status')],['notes','textarea',T('notes')]]}
