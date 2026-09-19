@@ -96,7 +96,7 @@ function openProfile(){closeProfileMenu();toast((currentUser.name||'Office User'
 function switchRoleView(){closeProfileMenu();toast('Current access: '+(currentUser.role||'PA')+' • User Management enabled')}
 function openUserManagement(){closeProfileMenu();state.key='staff';render();setTimeout(()=>document.getElementById('userManagement')?.scrollIntoView({behavior:'smooth'}),80)}
 function setupHeader(){
-  const u=currentUser||{}, role=u.role||'PA', id=u.id||(role==='MLA'?'MLA-001':role==='PA'?'PA-001':'ST-001');
+  const u=currentUser||{}, role=u.role||'PA', id=role==='MLA'?'MLA':role==='PA'?'PA':(u.id||'ST-001');
   const name=u.name||(role==='MLA'?'Arvindbhai Patel':role==='PA'?'Personal Assistant':'Office Staff'), initials=role==='MLA'?'MLA':role==='PA'?'PA':'ST';
   const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v};
   set('profileName',name);set('profileRole',role);set('profileId',id);set('profileAvatar',initials);set('menuName',name);set('menuEmail',u.email||'Authorized office account');set('menuRole',role);set('menuAvatar',initials);
