@@ -1,7 +1,7 @@
 const AUTH_SESSION_ENDPOINT='/.netlify/functions/me';
 const AUTH_LOGIN_ENDPOINT='/.netlify/functions/login';
 const AUTH_LOGOUT_ENDPOINT='/.netlify/functions/logout';
-const AUTH_CONFIG={mlaEmail:'acpatel789@gmail.com',paEmail:'pa@emlaoffice.in'};
+const AUTH_CONFIG={mlaEmail:'acpatel789@gmail.com',paEmail:'crvaland143@gmail.com'};
 
 function authScreen(){
   if(document.querySelector('.login-screen')) return;
