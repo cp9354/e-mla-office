@@ -16,12 +16,32 @@
 
   <main class="main">
     <header class="topbar">
-      <div class="page-heading"><div class="eyebrow" id="eyebrow">DHARAMPUR CONSTITUENCY</div><h1 id="pageTitle">Dashboard</h1><p id="pageSubtitle">MLA Office Management System</p></div>
+      <div class="top-left">
+        <button class="menu-toggle" id="menuToggle" type="button" aria-label="Menu">☰</button>
+        <span class="top-constituency">178 • DHARAMPUR</span>
+        <span class="top-location">⌖ Valsad District, Gujarat</span>
+      </div>
       <div class="top-actions">
         <select id="languageSelect" aria-label="Language">
           <option value="en">English</option><option value="gu">ગુજરાતી</option><option value="hi">हिन्दी</option>
         </select>
-        <div class="profile"><span class="avatar">OS</span><div><strong>OS1-001</strong><small>Office Staff 1</small></div><span>⌄</span></div>
+        <button class="icon-btn" id="notificationBtn" type="button" aria-label="Notifications">♧<b>3</b></button>
+        <div class="profile-wrap">
+          <button class="profile profile-trigger" id="profileTrigger" type="button">
+            <span class="profile-avatar" id="profileAvatar">MLA</span>
+            <div><strong id="profileName">Arvindbhai Patel</strong><small><span id="profileRole">MLA</span> | <span id="profileId">MLA-001</span></small></div>
+            <span>⌄</span>
+          </button>
+          <div class="profile-menu" id="profileMenu" hidden>
+            <div class="profile-menu-head"><div class="profile-avatar large" id="menuAvatar">MLA</div><div><strong id="menuName">Arvindbhai Patel</strong><small id="menuEmail">Authorized office account</small><span id="menuRole" class="role-badge">MLA</span></div></div>
+            <button type="button" onclick="openProfile()">♙ &nbsp; My Profile</button>
+            <button type="button" onclick="switchRoleView()">⇄ &nbsp; Switch Role</button>
+            <button type="button" onclick="openUserManagement()">♙ &nbsp; Manage Users (Create ID)</button>
+            <button type="button" onclick="state.key='settings';closeProfileMenu();render()">⚙ &nbsp; Settings</button>
+            <hr>
+            <button type="button" class="menu-logout" id="menuLogout">↪ &nbsp; Logout</button>
+          </div>
+        </div>
       </div>
     </header>
     <section id="content"></section>
