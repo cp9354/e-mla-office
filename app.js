@@ -1,5 +1,6 @@
 const AUTH_SESSION_ENDPOINT='/.netlify/functions/me';
-const AUTH_LOGIN_ENDPOINT='/.netlify/functions/login';
+const AUTH_OTP_REQUEST_ENDPOINT='/.netlify/functions/request-otp';
+const AUTH_OTP_VERIFY_ENDPOINT='/.netlify/functions/verify-otp';
 const AUTH_LOGOUT_ENDPOINT='/.netlify/functions/logout';
 const AUTH_CONFIG={mlaEmail:'acpatel789@gmail.com',paEmail:'crvaland143@gmail.com'};
 
@@ -11,50 +12,68 @@ function authScreen(){
   el.innerHTML=`
     <div class="login-card">
       <div class="login-brand"><div class="brand-mark">e</div><div><strong>e-MLA Office</strong><span>Dharampur Constituency • 178</span></div></div>
-      <div class="login-heading"><span class="eyebrow">SECURE OFFICE ACCESS</span><h1>Office Login</h1><p>Only authorized MLA and PA accounts can access the office ERP.</p></div>
+      <div class="login-heading"><span class="eyebrow">SECURE OFFICE ACCESS</span><h1>Email OTP Login</h1><p>Only the authorized MLA and PA email accounts can access the office ERP.</p></div>
       <div class="role-switch">
         <button type="button" class="role-btn active" data-role="mla">MLA</button>
         <button type="button" class="role-btn" data-role="pa">Personal Assistant</button>
       </div>
       <form id="loginForm" class="login-form">
-        <div class="field"><label>Email address</label><input id="loginEmail" name="email" type="email" autocomplete="username" value="${AUTH_CONFIG.mlaEmail}" required></div>
-        <div class="field"><label>Password</label><input name="password" type="password" autocomplete="current-password" placeholder="Enter password" required></div>
-        <button class="primary login-btn" type="submit">Sign in securely</button>
+        <div class="field"><label>Email address</label><input id="loginEmail" name="email" type="email" autocomplete="email" value="${AUTH_CONFIG.mlaEmail}" required></div>
+        <button class="primary login-btn" id="sendOtpBtn" type="submit">Send OTP to Email</button>
+        <div id="otpBox" class="otp-box" hidden>
+          <div class="otp-hint">A 6-digit OTP has been sent to your authorized email.</div>
+          <div class="field"><label>Enter OTP</label><input id="otpInput" name="otp" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="••••••" pattern="[0-9]{6}"></div>
+          <button class="primary login-btn" id="verifyOtpBtn" type="button">Verify OTP &amp; Login</button>
+          <button class="otp-resend" id="resendOtpBtn" type="button">Resend OTP</button>
+        </div>
         <div id="loginError" class="login-error"></div>
       </form>
-      <div class="login-note">Access is restricted to the two authorized office roles. Registration is not available on this page.</div>
+      <div class="login-note">No password is required. OTP expires automatically and access is restricted to the two authorized office emails.</div>
     </div>`;
   document.body.prepend(el);
   let role='mla';
   const email=el.querySelector('#loginEmail');
+  const otpBox=el.querySelector('#otpBox');
+  const error=el.querySelector('#loginError');
+  const sendBtn=el.querySelector('#sendOtpBtn');
+  const verifyBtn=el.querySelector('#verifyOtpBtn');
+  const sendOtp=async()=>{
+    error.textContent='';
+    const address=String(email.value||'').trim().toLowerCase();
+    const allowed=role==='mla'?AUTH_CONFIG.mlaEmail:AUTH_CONFIG.paEmail;
+    if(address!==allowed){error.textContent='Please use the authorized '+(role==='mla'?'MLA':'PA')+' email address.';return;}
+    sendBtn.disabled=true; sendBtn.textContent='Sending OTP...';
+    try{
+      const res=await fetch(AUTH_OTP_REQUEST_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role,email:address})});
+      const data=await res.json().catch(()=>({}));
+      if(!res.ok) throw new Error(data.message||'Unable to send OTP.');
+      otpBox.hidden=false; email.readOnly=true; otpBox.scrollIntoView({behavior:'smooth',block:'center'});
+      error.textContent=data.message||'OTP sent successfully.';
+      error.classList.add('success');
+    }catch(err){error.classList.remove('success');error.textContent=err.message||'Unable to send OTP.';}
+    finally{sendBtn.disabled=false;sendBtn.textContent='Send OTP to Email';}
+  };
   el.querySelectorAll('.role-btn').forEach(btn=>btn.onclick=()=>{
     role=btn.dataset.role;
     el.querySelectorAll('.role-btn').forEach(b=>b.classList.toggle('active',b===btn));
     email.value=role==='mla'?AUTH_CONFIG.mlaEmail:AUTH_CONFIG.paEmail;
+    otpBox.hidden=true; email.readOnly=false; error.textContent=''; error.classList.remove('success');
   });
-  el.querySelector('#loginForm').onsubmit=async e=>{
-    e.preventDefault();
-    const form=new FormData(e.currentTarget);
-    const error=el.querySelector('#loginError');
-    error.textContent='';
-    const button=el.querySelector('.login-btn');
-    button.disabled=true;
-    button.textContent='Signing in...';
+  el.querySelector('#loginForm').onsubmit=e=>{e.preventDefault();sendOtp();};
+  el.querySelector('#resendOtpBtn').onclick=sendOtp;
+  verifyBtn.onclick=async()=>{
+    error.textContent=''; error.classList.remove('success');
+    const otp=String(el.querySelector('#otpInput').value||'').trim();
+    if(!/^\d{6}$/.test(otp)){error.textContent='Enter the 6-digit OTP.';return;}
+    verifyBtn.disabled=true; verifyBtn.textContent='Verifying...';
     try{
-      const res=await fetch(AUTH_LOGIN_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role,email:String(form.get('email')||'').trim().toLowerCase(),password:String(form.get('password')||'')})});
+      const res=await fetch(AUTH_OTP_VERIFY_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:String(email.value||'').trim().toLowerCase(),otp})});
       const data=await res.json().catch(()=>({}));
-      if(!res.ok) throw new Error(data.message||'Invalid login details.');
+      if(!res.ok) throw new Error(data.message||'Invalid or expired OTP.');
       localStorage.setItem('emla-user',JSON.stringify(data.user||{}));
-      document.body.classList.remove('auth-locked');
-      el.remove();
-      addLogoutButton(data.user);
-      bootAuth();
-    }catch(err){
-      error.textContent=err.message||'Login failed. Please try again.';
-    }finally{
-      button.disabled=false;
-      button.textContent='Sign in securely';
-    }
+      document.body.classList.remove('auth-locked'); el.remove(); addLogoutButton(data.user); render();
+    }catch(err){error.textContent=err.message||'Verification failed.';}
+    finally{verifyBtn.disabled=false;verifyBtn.textContent='Verify OTP & Login';}
   };
 }
 
@@ -63,29 +82,15 @@ function addLogoutButton(user){
   const top=document.querySelector('.top-actions');
   if(!top) return;
   const b=document.createElement('button');
-  b.id='logoutButton';
-  b.className='logout-btn';
-  b.textContent='Logout';
-  b.title=(user?.role||'')+' • Sign out';
-  b.onclick=async()=>{
-    await fetch(AUTH_LOGOUT_ENDPOINT,{method:'POST'}).catch(()=>{});
-    localStorage.removeItem('emla-user');
-    document.body.classList.add('auth-locked');
-    authScreen();
-  };
+  b.id='logoutButton'; b.className='logout-btn'; b.textContent='Logout'; b.title=(user?.role||'')+' • Sign out';
+  b.onclick=async()=>{await fetch(AUTH_LOGOUT_ENDPOINT,{method:'POST'}).catch(()=>{});localStorage.removeItem('emla-user');document.body.classList.add('auth-locked');authScreen();};
   top.appendChild(b);
 }
 
 async function bootAuth(){
   try{
     const res=await fetch(AUTH_SESSION_ENDPOINT,{credentials:'include'});
-    if(res.ok){
-      const data=await res.json();
-      localStorage.setItem('emla-user',JSON.stringify(data.user||{}));
-      addLogoutButton(data.user);
-      render();
-      return;
-    }
+    if(res.ok){const data=await res.json();localStorage.setItem('emla-user',JSON.stringify(data.user||{}));addLogoutButton(data.user);render();return;}
   }catch(e){}
   authScreen();
 }
